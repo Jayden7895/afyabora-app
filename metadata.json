@@ -1,0 +1,7 @@
+{
+  "name": "AfyaBora E-Pharmacy",
+  "description": "A comprehensive E-Pharmacy and Medical Equipment platform for the Kenyan market, featuring AI-powered drug interaction checks, M-Pesa integration simulation, and robust admin management.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
