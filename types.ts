@@ -1,3 +1,4 @@
+
 export enum UserRole {
   CUSTOMER = 'CUSTOMER',
   ADMIN = 'ADMIN',
@@ -56,6 +57,8 @@ export interface Order {
   paymentMethod: 'MPESA' | 'CASH';
   shippingAddress: string;
   prescriptionImage?: string; // Base64 or URL
+  notes?: string;
+  deliveryAgentId?: string;
 }
 
 export interface InteractionResult {

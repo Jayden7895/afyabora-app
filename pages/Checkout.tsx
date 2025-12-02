@@ -1,51 +1,126 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { MockDb } from '../services/mockDb';
-import { Order, OrderStatus } from '../types';
-import { CreditCard, Upload, CheckCircle, Loader2 } from 'lucide-react';
+import { Order, OrderStatus, UserRole } from '../types';
+import { CreditCard, Upload, CheckCircle, Loader2, Smartphone } from 'lucide-react';
 
 const Checkout = () => {
-  const { cart, cartTotal, clearCart, user } = useApp();
+  const { cart, cartTotal, clearCart, user, isLoading } = useApp();
   const navigate = useNavigate();
   
   const [step, setStep] = useState(1);
   const [address, setAddress] = useState('');
   const [phone, setPhone] = useState('');
+  const [notes, setNotes] = useState('');
   const [prescriptionFile, setPrescriptionFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState<string>('');
+
+  // Redirect if not logged in or if user is not a customer
+  useEffect(() => {
+    if (!isLoading) {
+        if (!user) {
+            navigate('/login');
+        } else if (user.role !== UserRole.CUSTOMER) {
+            // Admins and Delivery Agents cannot checkout
+            navigate('/'); 
+        }
+    }
+  }, [user, isLoading, navigate]);
 
   const needsPrescription = cart.some(item => item.requiresPrescription);
 
   const handlePayment = async () => {
+    if (!user) return; // Safety check
+
     setIsProcessing(true);
+    setPaymentStatus('Initiating M-Pesa Request...');
     
-    // Simulate M-Pesa STK Push delay
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    try {
+        // 1. Initiate STK Push
+        const requestId = await MockDb.initiateMpesaPayment(phone, cartTotal + 200);
+        setPaymentStatus('Request Sent. Please check your phone and enter PIN.');
 
-    // Create Order
-    const newOrder: Order = {
-        id: `ord_${Math.random().toString(36).substr(2, 9)}`,
-        userId: user?.id || 'guest',
-        items: cart,
-        totalAmount: cartTotal + 200,
-        status: OrderStatus.PENDING,
-        date: new Date().toISOString(),
-        paymentMethod: 'MPESA',
-        shippingAddress: address,
-        prescriptionImage: prescriptionFile ? 'simulated_url_to_image' : undefined
-    };
+        // 2. Poll for Status
+        const pollInterval = setInterval(async () => {
+            const status = await MockDb.checkPaymentStatus(requestId);
+            
+            if (status === 'COMPLETED') {
+                clearInterval(pollInterval);
+                setPaymentStatus('Payment Confirmed. Finalizing Order...');
+                await finalizeOrder();
+            } else if (status === 'FAILED') {
+                clearInterval(pollInterval);
+                setIsProcessing(false);
+                setPaymentStatus('');
+                alert("Payment Failed or Cancelled. Please try again.");
+            }
+        }, 2000); // Check every 2 seconds
 
-    MockDb.saveOrder(newOrder);
-    clearCart();
-    setIsProcessing(false);
-    setStep(3); // Success
+        // Timeout after 60 seconds
+        setTimeout(() => {
+            clearInterval(pollInterval);
+            if (isProcessing) {
+                setIsProcessing(false);
+                setPaymentStatus('');
+                alert("Payment timed out. Did you receive the STK push?");
+            }
+        }, 60000);
+
+    } catch (e) {
+        setIsProcessing(false);
+        alert("Failed to initiate payment. Ensure backend is running.");
+    }
   };
+
+  const finalizeOrder = async () => {
+      // Upload prescription if exists
+      let prescriptionUrl = undefined;
+      if (prescriptionFile) {
+          prescriptionUrl = await MockDb.uploadPrescription(prescriptionFile);
+      }
+
+      // Create Order
+      const newOrder: Order = {
+          id: `ord_${Math.random().toString(36).substr(2, 9)}`,
+          userId: user!.id,
+          items: cart,
+          totalAmount: cartTotal + 200,
+          status: OrderStatus.PENDING,
+          date: new Date().toISOString(),
+          paymentMethod: 'MPESA',
+          shippingAddress: address,
+          prescriptionImage: prescriptionUrl,
+          notes: notes.trim() || undefined
+      };
+
+      try {
+          await MockDb.saveOrder(newOrder);
+          clearCart();
+          setIsProcessing(false);
+          setStep(3); // Success
+      } catch (e) {
+          alert("Error saving order to backend");
+          setIsProcessing(false);
+      }
+  };
+
+  if (isLoading) {
+      return (
+          <div className="flex items-center justify-center min-h-[50vh]">
+              <Loader2 className="animate-spin text-emerald-600" size={32} />
+          </div>
+      );
+  }
 
   if (cart.length === 0 && step !== 3) {
       navigate('/shop');
       return null;
   }
+
+  // Prevent flash of content if user is null or not customer
+  if (!user || user.role !== UserRole.CUSTOMER) return null; 
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -85,6 +160,17 @@ const Checkout = () => {
                     className="w-full p-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500"
                     value={address}
                     onChange={e => setAddress(e.target.value)}
+                  />
+              </div>
+
+              <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Delivery Instructions (Optional)</label>
+                  <textarea 
+                    rows={2}
+                    placeholder="e.g. Leave at gate, call upon arrival, specific landmark..." 
+                    className="w-full p-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-emerald-500"
+                    value={notes}
+                    onChange={e => setNotes(e.target.value)}
                   />
               </div>
 
@@ -131,25 +217,30 @@ const Checkout = () => {
 
               <div className="space-y-4">
                   <p className="text-slate-600">
-                      We have sent a payment request to <strong className="text-slate-900">{phone}</strong>. 
-                      Please enter your M-Pesa PIN on your phone to complete the transaction.
+                      Click below to pay via M-Pesa. A request will be sent to <strong className="text-slate-900">{phone}</strong>.
                   </p>
                   
                   {isProcessing ? (
-                      <div className="flex flex-col items-center justify-center py-8">
-                          <Loader2 className="animate-spin text-emerald-600 mb-4" size={48} />
-                          <p className="font-medium text-emerald-700">Waiting for M-Pesa confirmation...</p>
+                      <div className="flex flex-col items-center justify-center py-8 bg-emerald-50 rounded-xl border border-emerald-100">
+                          <div className="relative">
+                            <Smartphone size={48} className="text-emerald-800 mb-4" />
+                            <Loader2 className="animate-spin text-emerald-600 absolute -top-1 -right-1" size={24} />
+                          </div>
+                          <p className="font-bold text-emerald-800 animate-pulse">{paymentStatus}</p>
+                          <p className="text-sm text-emerald-600 mt-2">Please enter your PIN on your phone.</p>
                       </div>
                   ) : (
                       <button 
                         onClick={handlePayment}
-                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition"
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition shadow-lg shadow-emerald-600/20"
                       >
-                          <CreditCard size={20} /> Simulate Payment Success
+                          <CreditCard size={20} /> Pay Now (M-Pesa)
                       </button>
                   )}
               </div>
-              <button onClick={() => setStep(1)} className="text-slate-400 hover:text-slate-600 text-sm">Go Back</button>
+              {!isProcessing && (
+                  <button onClick={() => setStep(1)} className="text-slate-400 hover:text-slate-600 text-sm">Go Back</button>
+              )}
           </div>
       )}
 

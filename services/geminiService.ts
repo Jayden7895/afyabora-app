@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { InteractionResult } from "../types";
+import { InteractionResult, Product } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -47,6 +47,60 @@ export const GeminiService = {
         warnings: ["Could not verify interactions at this time. Please consult a pharmacist."],
         recommendation: "Proceed with caution."
       };
+    }
+  },
+
+  /**
+   * Performs an intelligent search over a list of products using Gemini.
+   * Understands symptoms, typos, and medical terminology.
+   */
+  smartSearch: async (query: string, products: Product[]): Promise<string[]> => {
+    try {
+      // Simplify product list to save tokens, only sending necessary fields
+      const productContext = products.map(p => ({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        category: p.category
+      }));
+
+      const prompt = `
+        You are an intelligent search engine for a pharmacy.
+        User Query: "${query}"
+        
+        Task: Match the user query to the provided products.
+        - Analyze symptoms (e.g., "my head hurts" -> painkillers).
+        - Understand medical terms (e.g., "hypertension" -> BP monitor).
+        - Handle typos and natural language.
+        - If the query is vague, return the best possible matches.
+        
+        Product List: ${JSON.stringify(productContext)}
+        
+        Return ONLY a JSON object with a "productIds" property containing an array of matching product IDs.
+      `;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              productIds: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING }
+              }
+            }
+          }
+        }
+      });
+      
+      const result = JSON.parse(response.text || '{"productIds": []}');
+      return result.productIds;
+    } catch (error) {
+      console.error("AI Search Error:", error);
+      return []; 
     }
   },
 

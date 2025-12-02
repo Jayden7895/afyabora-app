@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { Trash2, AlertOctagon, Check } from 'lucide-react';
+import { Trash2, AlertOctagon, Check, LogIn, Lock } from 'lucide-react';
 import { GeminiService } from '../services/geminiService';
-import { ProductCategory } from '../types';
+import { ProductCategory, UserRole } from '../types';
 
 const Cart = () => {
-  const { cart, removeFromCart, cartTotal } = useApp();
+  const { cart, removeFromCart, cartTotal, user } = useApp();
+  const navigate = useNavigate();
   const [warnings, setWarnings] = useState<string[]>([]);
   const [checking, setChecking] = useState(false);
 
@@ -107,12 +108,38 @@ const Cart = () => {
                     <span>KSh {cartTotal + 200}</span>
                 </div>
             </div>
-            <Link 
-                to="/checkout"
-                className="block w-full bg-emerald-700 text-white text-center font-bold py-4 rounded-xl hover:bg-emerald-800 transition"
-            >
-                Proceed to Checkout
-            </Link>
+            
+            {user ? (
+                user.role === UserRole.CUSTOMER ? (
+                    <Link 
+                        to="/checkout"
+                        className="block w-full bg-emerald-700 text-white text-center font-bold py-4 rounded-xl hover:bg-emerald-800 transition"
+                    >
+                        Proceed to Checkout
+                    </Link>
+                ) : (
+                    <div className="bg-slate-100 border border-slate-200 p-4 rounded-xl text-slate-500 text-center flex flex-col items-center gap-2">
+                        <Lock size={20} />
+                        <span className="font-medium text-sm">
+                            {user.role === UserRole.ADMIN ? 'Administrators' : 'Delivery Agents'} cannot place orders.
+                        </span>
+                    </div>
+                )
+            ) : (
+                <div className="space-y-3">
+                    <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg text-sm text-amber-800 flex items-start gap-2">
+                        <LogIn size={16} className="mt-0.5 flex-shrink-0" />
+                        <p>You must be logged in to complete your purchase.</p>
+                    </div>
+                    <button 
+                        onClick={() => navigate('/login')}
+                        className="block w-full bg-emerald-700 text-white text-center font-bold py-4 rounded-xl hover:bg-emerald-800 transition"
+                    >
+                        Login to Checkout
+                    </button>
+                </div>
+            )}
+            
             <p className="text-xs text-center text-slate-400 mt-4">
                 Secure checkout powered by M-Pesa
             </p>

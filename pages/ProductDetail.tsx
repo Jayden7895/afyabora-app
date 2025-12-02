@@ -3,29 +3,59 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { MockDb } from '../services/mockDb';
 import { Product } from '../types';
 import { useApp } from '../context/AppContext';
-import { ShoppingCart, AlertTriangle, CheckCircle } from 'lucide-react';
+import { CookieService } from '../services/cookieService';
+import { ShoppingCart, AlertTriangle, CheckCircle, Heart, Loader2 } from 'lucide-react';
 
 const ProductDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { addToCart } = useApp();
+  const { addToCart, wishlist, toggleWishlist, user } = useApp();
   const [product, setProduct] = useState<Product | undefined>(undefined);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (id) {
-        const p = MockDb.getProductById(id);
-        setProduct(p);
-    }
+    const fetchProduct = async () => {
+        if (id) {
+            setLoading(true);
+            const p = await MockDb.getProductById(id);
+            setProduct(p);
+            setLoading(false);
+            
+            // Track user preference via cookies
+            if (p) {
+                CookieService.trackView(p.category, p.id);
+            }
+        }
+    };
+    fetchProduct();
   }, [id]);
 
-  if (!product) {
-      return <div>Loading...</div>;
+  if (loading) {
+      return (
+        <div className="flex items-center justify-center h-[50vh]">
+            <Loader2 className="animate-spin text-emerald-600" size={32} />
+        </div>
+      );
   }
+
+  if (!product) {
+      return <div>Product not found</div>;
+  }
+
+  const isInWishlist = wishlist.includes(product.id);
+
+  const handleWishlistToggle = () => {
+      if (!user) {
+          navigate('/login');
+          return;
+      }
+      toggleWishlist(product.id);
+  };
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
       <div className="grid grid-cols-1 md:grid-cols-2">
-        <div className="bg-slate-50 p-8 flex items-center justify-center">
+        <div className="bg-slate-50 p-8 flex items-center justify-center relative">
             <img src={product.imageUrl} alt={product.name} className="max-w-full rounded-xl shadow-lg" />
         </div>
         <div className="p-8 md:p-12 space-y-6">
@@ -72,15 +102,22 @@ const ProductDetail = () => {
                 </div>
             </div>
 
-            <div className="pt-8">
+            <div className="pt-8 flex gap-4">
                 <button 
-                    onClick={() => {
-                        addToCart(product, 1);
-                        // Optional feedback toast could go here
-                    }}
-                    className="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition"
+                    onClick={() => addToCart(product, 1)}
+                    className="flex-grow bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition shadow-lg shadow-emerald-700/20"
                 >
                     <ShoppingCart size={20} /> Add to Cart
+                </button>
+                <button 
+                    onClick={handleWishlistToggle}
+                    className={`px-6 py-4 rounded-xl border-2 font-bold flex items-center justify-center gap-2 transition ${
+                        isInWishlist 
+                        ? 'border-rose-200 bg-rose-50 text-rose-500' 
+                        : 'border-slate-200 text-slate-600 hover:border-rose-200 hover:text-rose-500'
+                    }`}
+                >
+                    <Heart size={20} fill={isInWishlist ? "currentColor" : "none"} />
                 </button>
             </div>
         </div>
